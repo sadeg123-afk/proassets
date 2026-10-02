@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     first_name TEXT,
     last_name TEXT,
-    role TEXT DEFAULT 'customer', -- customer, creator, admin
+    role TEXT DEFAULT 'customer',
     bio TEXT,
     profile_image TEXT,
     is_active BOOLEAN DEFAULT 1,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- جدول الأقسام (Categories)
+-- جدول الأقسام
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name_en TEXT NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS categories (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- جدول المنتجات (الأصول)
+-- جدول المنتجات
 CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     creator_id INTEGER NOT NULL,
@@ -43,15 +43,15 @@ CREATE TABLE IF NOT EXISTS products (
     description_ar TEXT,
     price DECIMAL(10, 2) NOT NULL,
     currency TEXT DEFAULT 'USD',
-    product_type TEXT NOT NULL, -- book, template, graphic, code, other
+    product_type TEXT NOT NULL,
     file_url TEXT,
-    file_size INTEGER, -- بالبايتات
+    file_size INTEGER,
     preview_image TEXT,
-    preview_file TEXT, -- عينة من الملف
+    preview_file TEXT,
     downloads_count INTEGER DEFAULT 0,
     sales_count INTEGER DEFAULT 0,
     rating DECIMAL(3, 2) DEFAULT 0,
-    status TEXT DEFAULT 'draft', -- draft, pending, published, rejected
+    status TEXT DEFAULT 'draft',
     is_featured BOOLEAN DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -59,17 +59,17 @@ CREATE TABLE IF NOT EXISTS products (
     FOREIGN KEY (category_id) REFERENCES categories(id)
 );
 
--- جدول الطلبات (Orders)
+-- جدول الطلبات
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
     price DECIMAL(10, 2) NOT NULL,
     currency TEXT DEFAULT 'USD',
-    platform_commission DECIMAL(10, 2), -- 20%
-    creator_earnings DECIMAL(10, 2), -- 80%
-    payment_method TEXT, -- stripe, paypal, test
-    payment_status TEXT DEFAULT 'pending', -- pending, completed, failed, refunded
+    platform_commission DECIMAL(10, 2),
+    creator_earnings DECIMAL(10, 2),
+    payment_method TEXT,
+    payment_status TEXT DEFAULT 'pending',
     transaction_id TEXT,
     download_token TEXT UNIQUE,
     is_downloaded BOOLEAN DEFAULT 0,
@@ -78,12 +78,12 @@ CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
--- جدول التقييمات والتعليقات
+-- جدول التقييمات
 CREATE TABLE IF NOT EXISTS reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id INTEGER NOT NULL,
     customer_id INTEGER NOT NULL,
-    rating INTEGER NOT NULL, -- 1-5
+    rating INTEGER NOT NULL,
     comment TEXT,
     is_verified_purchase BOOLEAN DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -102,15 +102,15 @@ CREATE TABLE IF NOT EXISTS wallets (
     FOREIGN KEY (creator_id) REFERENCES users(id)
 );
 
--- جدول السحب (Withdrawals)
+-- جدول السحب
 CREATE TABLE IF NOT EXISTS withdrawals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     creator_id INTEGER NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
     currency TEXT DEFAULT 'USD',
-    withdrawal_method TEXT, -- bank_transfer, paypal, wise
-    account_details TEXT, -- معلومات الحساب المشفرة
-    status TEXT DEFAULT 'pending', -- pending, processing, completed, rejected
+    withdrawal_method TEXT,
+    account_details TEXT,
+    status TEXT DEFAULT 'pending',
     transaction_id TEXT,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     FOREIGN KEY (creator_id) REFERENCES users(id)
 );
 
--- جدول القسائم (Coupons)
+-- جدول القسائم
 CREATE TABLE IF NOT EXISTS coupons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS coupons (
     FOREIGN KEY (creator_id) REFERENCES users(id)
 );
 
--- جدول المكتبة الشخصية (My Library)
+-- جدول المكتبة الشخصية
 CREATE TABLE IF NOT EXISTS user_library (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id INTEGER NOT NULL,
@@ -152,25 +152,25 @@ CREATE TABLE IF NOT EXISTS notifications (
     title_ar TEXT NOT NULL,
     message_en TEXT,
     message_ar TEXT,
-    notification_type TEXT, -- sale, withdrawal, review, message
+    notification_type TEXT,
     related_id INTEGER,
     is_read BOOLEAN DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- جدول الرسائل (Contact/Support)
+-- جدول الرسائل
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sender_id INTEGER NOT NULL,
     subject TEXT NOT NULL,
     message TEXT NOT NULL,
-    status TEXT DEFAULT 'open', -- open, in_progress, closed
+    status TEXT DEFAULT 'open',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES users(id)
 );
 
--- جدول الإعدادات العامة
+-- جدول الإعدادات
 CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT UNIQUE NOT NULL,
@@ -178,7 +178,7 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- إنشاء الفهارس (Indexes) لتسريع البحث
+-- الفهارس
 CREATE INDEX IF NOT EXISTS idx_products_creator_id ON products(creator_id);
 CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(status);
@@ -187,3 +187,12 @@ CREATE INDEX IF NOT EXISTS idx_orders_product_id ON orders(product_id);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(payment_status);
 CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- إدراج أقسام افتراضية
+INSERT OR IGNORE INTO categories (id, name_en, name_ar, slug, description_en, description_ar, icon, is_active) VALUES
+(1, 'Books & Ebooks', 'الكتب والكتب الإلكترونية', 'books', 'Digital books and publications', 'الكتب والمنشورات الرقمية', '📚', 1),
+(2, 'Templates', 'القوالب', 'templates', 'Ready-made templates for business and design', 'قوالب جاهزة للأعمال والتصميم', '📋', 1),
+(3, 'Graphics & Design', 'الجرافيكس والتصميم', 'graphics', 'Design assets and graphics', 'أصول التصميم والرسوميات', '🎨', 1),
+(4, 'Code & Dev Tools', 'الأكواد والأدوات البرمجية', 'code', 'Code snippets and developer tools', 'مقاطع أكواد وأدوات المطورين', '💻', 1),
+(5, 'Courses & Training', 'الدورات والتدريب', 'courses', 'Educational courses and training materials', 'الدورات التعليمية والمواد التدريبية', '🎓', 1),
+(6, 'Audio & Music', 'الصوت والموسيقى', 'audio', 'Music, sound effects and audio files', 'الموسيقى والمؤثرات الصوتية والملفات الصوتية', '🎵', 1);
