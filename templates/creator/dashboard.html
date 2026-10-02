@@ -395,4 +395,46 @@
                     </a>
                 </div>
                 {% endif %}
-            
+            </div>
+
+            <!-- Recent Sales -->
+            <div class="card">
+                <h2>💰 Recent Sales</h2>
+                {% if sales %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Price</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in sales %}
+                        <tr>
+                            <td>
+                                <a href="/product/{{ sale.title_en }}" class="product-link">
+                                    {{ sale.title_en }}
+                                </a>
+                            </td>
+                            <td class="price">${{ sale.price }}</td>
+                            <td>{{ sale.created_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <p>No sales yet. Upload products to start earning!</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2024 ProAssets. All rights reserved.</p>
+    </footer>
+</body>
+</html>
