@@ -79,13 +79,28 @@ def create_app(config_name=None):
     with app.app_context():
         init_db(app)
     
+    # ===== إيقاف المسارات غير الآمنة =====
+    @app.before_request
+    def block_payments():
+        """إيقاف مسارات الدفع والسحب حتى يتم ربطها بشكل آمن"""
+        blocked_endpoints = {
+            "checkout",
+            "creator_withdraw",
+            "process_withdrawal",
+        }
+        
+        if request.endpoint in blocked_endpoints:
+            return jsonify({
+                "status": "disabled",
+                "message": "Payments and withdrawals are disabled during development"
+            }), 503
+
     # ===== الصفحات العامة - PUBLIC PAGES =====
     
     @app.route('/')
     def home():
         """الصفحة الرئيسية"""
         db = get_db()
-        # احصل على أفضل 8 منتجات مميزة
         featured = db.execute(
             'SELECT * FROM products WHERE status = "published" AND is_featured = 1 LIMIT 8'
         ).fetchall()
@@ -138,9 +153,8 @@ def create_app(config_name=None):
             password = data.get('password')
             first_name = data.get('first_name', '')
             last_name = data.get('last_name', '')
-            user_type = data.get('user_type', 'customer')  # customer أو creator
+            user_type = data.get('user_type', 'customer')
             
-            # التحقق من المدخلات
             if not username or not email or not password:
                 return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
             
@@ -150,7 +164,6 @@ def create_app(config_name=None):
             db = get_db()
             error = None
             
-            # التحقق من عدم وجود حساب بنفس البريد أو اسم المستخدم
             if db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone():
                 error = 'Email already registered'
             elif db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone():
@@ -160,7 +173,6 @@ def create_app(config_name=None):
                 db.close()
                 return jsonify({'status': 'error', 'message': error}), 400
             
-            # إنشاء الحساب
             role = 'creator' if user_type == 'creator' else 'customer'
             db.execute(
                 'INSERT INTO users (username, email, password_hash, first_name, last_name, role) VALUES (?, ?, ?, ?, ?, ?)',
@@ -168,7 +180,6 @@ def create_app(config_name=None):
             )
             db.commit()
             
-            # إذا كان creator، أنشئ محفظة له
             if role == 'creator':
                 user_id = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()['id']
                 db.execute(
@@ -203,7 +214,6 @@ def create_app(config_name=None):
             if not user['is_active']:
                 return jsonify({'status': 'error', 'message': 'Account is disabled'}), 403
             
-            # حفظ الجلسة
             session.clear()
             session['user_id'] = user['id']
             session['username'] = user['username']
@@ -248,10 +258,8 @@ def create_app(config_name=None):
             search_param = f'%{search}%'
             params.extend([search_param, search_param, search_param])
         
-        # العد الكلي
         total = db.execute(f'SELECT COUNT(*) FROM ({query})').fetchone()[0]
         
-        # الترتيب والتجزئة
         query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
         params.extend([per_page, (page - 1) * per_page])
         
@@ -287,7 +295,6 @@ def create_app(config_name=None):
             db.close()
             return render_template('errors/404.html'), 404
         
-        # احصل على التقييمات
         reviews = db.execute(
             'SELECT r.*, u.username FROM reviews r '
             'JOIN users u ON r.customer_id = u.id '
@@ -295,7 +302,6 @@ def create_app(config_name=None):
             (product['id'],)
         ).fetchall()
         
-        # احصل على منتجات أخرى من نفس المنشئ
         other_products = db.execute(
             'SELECT * FROM products WHERE creator_id = ? AND id != ? AND status = "published" LIMIT 4',
             (product['creator_id'], product['id'])
@@ -339,7 +345,6 @@ def create_app(config_name=None):
         if 'cart' not in session:
             session['cart'] = []
         
-        # التحقق من عدم إضافة نفس المنتج مرتين
         for item in session['cart']:
             if item['id'] == product_id:
                 return jsonify({'status': 'error', 'message': 'Product already in cart'}), 400
@@ -365,55 +370,10 @@ def create_app(config_name=None):
     def checkout():
         """صفحة الدفع"""
         if request.method == 'POST':
-            cart_items = session.get('cart', [])
-            user_id = session['user_id']
-            
-            if not cart_items:
-                return jsonify({'status': 'error', 'message': 'Cart is empty'}), 400
-            
-            db = get_db()
-            total = 0
-            
-            # حساب المجموع وإنشاء الطلبات
-            for item in cart_items:
-                product = db.execute('SELECT * FROM products WHERE id = ?', (item['id'],)).fetchone()
-                if product:
-                    total += product['price']
-                    
-                    # إنشاء الطلب
-                    platform_commission = product['price'] * 0.20  # 20%
-                    creator_earnings = product['price'] * 0.80  # 80%
-                    
-                    db.execute(
-                        'INSERT INTO orders (customer_id, product_id, price, platform_commission, creator_earnings, payment_status) VALUES (?, ?, ?, ?, ?, ?)',
-                        (user_id, product['id'], product['price'], platform_commission, creator_earnings, 'completed')
-                    )
-                    
-                    # إضافة للمحفظة الشخصية
-                    db.execute(
-                        'INSERT OR IGNORE INTO user_library (customer_id, product_id) VALUES (?, ?)',
-                        (user_id, product['id'])
-                    )
-                    
-                    # تحديث أرباح المنشئ
-                    db.execute(
-                        'UPDATE wallets SET balance = balance + ?, total_earnings = total_earnings + ? WHERE creator_id = ?',
-                        (creator_earnings, creator_earnings, product['creator_id'])
-                    )
-            
-            db.commit()
-            db.close()
-            
-            # مسح السلة
-            session['cart'] = []
-            session.modified = True
-            
             return jsonify({
-                'status': 'success',
-                'message': 'Purchase completed',
-                'total': total,
-                'redirect': url_for('my_library')
-            })
+                'status': 'error',
+                'message': 'Checkout is disabled during development'
+            }), 503
         
         return render_template('checkout.html', title='Checkout')
     
@@ -503,13 +463,11 @@ def create_app(config_name=None):
         user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
         wallet = db.execute('SELECT * FROM wallets WHERE creator_id = ?', (user_id,)).fetchone()
         
-        # آخر 5 منتجات
         products = db.execute(
             'SELECT * FROM products WHERE creator_id = ? ORDER BY created_at DESC LIMIT 5',
             (user_id,)
         ).fetchall()
         
-        # آخر 5 مبيعات
         sales = db.execute(
             'SELECT o.*, p.title_en FROM orders o '
             'JOIN products p ON o.product_id = p.id '
@@ -564,7 +522,6 @@ def create_app(config_name=None):
             description_ar = request.form.get('description_ar')
             product_type = request.form.get('product_type')
             
-            # التحقق من الملف
             if 'file' not in request.files:
                 return jsonify({'status': 'error', 'message': 'No file provided'}), 400
             
@@ -572,13 +529,11 @@ def create_app(config_name=None):
             if file.filename == '' or not allowed_file(file.filename):
                 return jsonify({'status': 'error', 'message': 'Invalid file'}), 400
             
-            # حفظ الملف
             filename = secure_filename(f"{int(datetime.now().timestamp())}_{file.filename}")
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file_path = os.path.join('uploads', filename)
             file.save(file_path)
             file_size = os.path.getsize(file_path)
             
-            # إنشاء slug
             slug = f"{title_en.lower().replace(' ', '-')}-{int(datetime.now().timestamp())}"
             
             db = get_db()
@@ -623,36 +578,10 @@ def create_app(config_name=None):
     @creator_required
     def creator_withdraw():
         """طلب سحب أرباح"""
-        user_id = session['user_id']
-        data = request.get_json() or request.form
-        
-        amount = data.get('amount', type=float)
-        method = data.get('method')  # bank_transfer, paypal, wise
-        account_details = data.get('account_details')
-        
-        db = get_db()
-        wallet = db.execute('SELECT balance FROM wallets WHERE creator_id = ?', (user_id,)).fetchone()
-        
-        if not wallet or wallet['balance'] < amount:
-            db.close()
-            return jsonify({'status': 'error', 'message': 'Insufficient balance'}), 400
-        
-        # إنشاء طلب السحب
-        db.execute(
-            'INSERT INTO withdrawals (creator_id, amount, withdrawal_method, account_details, status) VALUES (?, ?, ?, ?, ?)',
-            (user_id, amount, method, account_details, 'pending')
-        )
-        
-        # تقليل المحفظة
-        db.execute(
-            'UPDATE wallets SET balance = balance - ? WHERE creator_id = ?',
-            (amount, user_id)
-        )
-        
-        db.commit()
-        db.close()
-        
-        return jsonify({'status': 'success', 'message': 'Withdrawal request submitted'})
+        return jsonify({
+            'status': 'error',
+            'message': 'Withdrawals are disabled during development'
+        }), 503
     
     # ===== لوحة التحكم - الإدارة - ADMIN DASHBOARD =====
     
@@ -719,12 +648,8 @@ def create_app(config_name=None):
     @admin_required
     def reject_product(product_id):
         """رفض منتج"""
-        data = request.get_json() or request.form
-        reason = data.get('reason', '')
-        
         db = get_db()
         db.execute('UPDATE products SET status = ? WHERE id = ?', ('rejected', product_id))
-        # يمكن إضافة جدول لتسجيل أسباب الرفض لاحقاً
         db.commit()
         db.close()
         return jsonify({'status': 'success', 'message': 'Product rejected'})
